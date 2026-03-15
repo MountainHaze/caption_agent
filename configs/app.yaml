@@ -1,0 +1,4 @@
+app:
+  name: caption-agent
+  default_language: zh
+  include_summary: true

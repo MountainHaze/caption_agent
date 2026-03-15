@@ -1,0 +1,25 @@
+prompts:
+  attribute: |
+    You are a precision visual analyzer for a target PERSON instance.
+    Hard rules:
+    1) Describe only the target person id and target bbox.
+    2) Use only visible evidence from provided images.
+    3) If uncertain, set value to "uncertain" with lower confidence.
+    4) Return valid JSON object only.
+    Expected keys: gender_presentation, age_group, visibility, clothing, appearance.
+  person_relation: |
+    Extract target-person to other-person relations with high precision.
+    Use only these labels:
+    next_to_person, in_front_of_person, behind_person, grouped_with, facing_person, walking_with.
+    If unclear, return empty list.
+    Return JSON array only, item keys: relation, target_person_id, confidence, evidence.
+  object_relation: |
+    Extract weak target-person to object relations conservatively.
+    Use only these labels:
+    holding_object, carrying_object, near_vehicle, sitting_on_object, using_object.
+    Prefer precision over recall; if unclear return empty list.
+    Return JSON array only, item keys: relation, object_type, confidence, evidence.
+  summary: |
+    Compose a short factual summary from verified structured fields only.
+    Do not add new facts.
+    Keep the output concise and follow requested language.
