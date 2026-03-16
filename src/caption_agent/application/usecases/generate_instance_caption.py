@@ -4,11 +4,12 @@ import base64
 from uuid import uuid4
 
 from caption_agent.api.schemas.request import CaptionRequest
-from caption_agent.domain.entities.bbox import BBox
 from caption_agent.domain.entities.caption_result import CaptionResult
 from caption_agent.domain.entities.person_instance import PersonInstance
 from caption_agent.domain.policies.verification_policy import VerificationPolicy
 from caption_agent.graph.builder import build_caption_graph
+from caption_agent.infrastructure.imaging.bbox_transform import resolve_bbox_to_xyxy
+from caption_agent.infrastructure.imaging.cropper import load_image
 from caption_agent.infrastructure.llm.factory import build_multimodal_client
 from caption_agent.infrastructure.observability.logging import get_logger
 from caption_agent.shared.config import AppSettings
@@ -31,11 +32,18 @@ class GenerateInstanceCaptionUseCase:
 
     def execute(self, request: CaptionRequest) -> tuple[CaptionResult, list[str]]:
         image_ref = self._resolve_image_ref(request)
+        image = load_image(image_ref)
+        image_width, image_height = image.size
         request_id = uuid4().hex
         persons = [
             PersonInstance(
                 id=item.id,
-                bbox=BBox.from_list(item.bbox),
+                bbox=resolve_bbox_to_xyxy(
+                    raw_bbox=item.bbox,
+                    image_width=image_width,
+                    image_height=image_height,
+                    bbox_format=item.bbox_format,
+                ),
                 score=item.score,
             )
             for item in request.instances
@@ -48,6 +56,8 @@ class GenerateInstanceCaptionUseCase:
             "language": request.language,
             "include_summary": request.include_summary,
             "artifact_dir": self.settings.artifact_dir,
+            "image_width": image_width,
+            "image_height": image_height,
             "errors": [],
         }
         final_state = self.graph.invoke(initial_state)

@@ -55,8 +55,7 @@ Example payload:
   "image_base64": "<base64-image-bytes>",
   "image_mime_type": "image/jpeg",
   "instances": [
-    {"id": "p1", "bbox": [30, 20, 120, 210]},
-    {"id": "p2", "bbox": [140, 30, 230, 220]}
+    {"id": "p1", "bbox": [0.620039, 0.5939, 0.172415, 0.14608], "bbox_format": "norm_xywh"}
   ],
   "target_instance_id": "p1",
   "language": "zh",
@@ -68,6 +67,8 @@ Notes:
 
 - For external users, prefer `image_base64` or `/v1/caption/upload`.
 - `image` field still supports `http(s)` URL and local path for debugging.
+- If `instances` contains one item, API returns one object.
+- If `instances` contains multiple items, API returns an array (one result per instance id).
 
 `/v1/caption/upload` form fields:
 
@@ -76,6 +77,13 @@ Notes:
 - `target_instance_id`
 - `language` (optional, default `zh`)
 - `include_summary` (optional, default `true`)
+
+`bbox` input formats:
+
+- `norm_xywh`: normalized `[cx, cy, w, h]`, each value in `0-1`
+- `xyxy`: absolute pixel `[x1, y1, x2, y2]`
+- `xywh`: absolute pixel `[x, y, w, h]`
+- `auto` (default): inferred from value range
 
 ## Notes
 

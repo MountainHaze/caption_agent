@@ -1,22 +1,26 @@
 from __future__ import annotations
 
+import re
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class PersonInstanceInput(BaseModel):
     id: str = Field(..., min_length=1)
-    bbox: list[float] = Field(..., min_length=4, max_length=4)
+    bbox: list[float] | str = Field(..., description="Supports [x1,y1,x2,y2], [x,y,w,h], or YOLO normalized format.")
+    bbox_format: Literal["auto", "xyxy", "xywh", "norm_xywh"] = "auto"
     score: float | None = Field(default=None, ge=0.0, le=1.0)
 
     @field_validator("bbox")
     @classmethod
-    def validate_bbox(cls, value: list[float]) -> list[float]:
+    def validate_bbox(cls, value: list[float] | str) -> list[float]:
+        if isinstance(value, str):
+            parts = [item for item in re.split(r"[,\s]+", value.strip()) if item]
+            value = [float(item) for item in parts]
         if len(value) != 4:
-            raise ValueError("bbox must contain 4 values")
-        x1, y1, x2, y2 = value
-        if x2 <= x1 or y2 <= y1:
-            raise ValueError("bbox must satisfy x2>x1 and y2>y1")
-        return value
+            raise ValueError("bbox must contain exactly 4 values")
+        return [float(item) for item in value]
 
 
 class CaptionRequest(BaseModel):

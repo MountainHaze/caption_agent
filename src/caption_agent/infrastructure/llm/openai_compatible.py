@@ -87,7 +87,7 @@ def _extract_attributes(
         },
         "appearance": {
             "hair": None,
-            "pose": "unknown",
+            "activity": None,
             "orientation": "unknown",
         },
     }

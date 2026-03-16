@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ConfidenceLabel(BaseModel):
@@ -26,7 +26,7 @@ class ClothingAttrs(BaseModel):
 
 class AppearanceAttrs(BaseModel):
     hair: str | None = None
-    pose: Literal["standing", "sitting", "walking", "bending", "unknown"] = "unknown"
+    activity: str | None = None
     orientation: Literal["front-facing", "back-facing", "side-facing", "unknown"] = (
         "unknown"
     )
@@ -47,3 +47,13 @@ class RelationPayload(BaseModel):
     target_person_id: str | None = None
     object_type: str | None = None
 
+    @field_validator("target_person_id", mode="before")
+    @classmethod
+    def normalize_target_person_id(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return str(int(value))
+        if isinstance(value, str):
+            return value.strip() or None
+        return str(value)

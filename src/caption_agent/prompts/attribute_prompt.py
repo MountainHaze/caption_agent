@@ -12,5 +12,5 @@ Expected JSON keys:
 - age_group: {"value": string, "confidence": 0..1}
 - visibility: {"full_body": bool, "face_visible": bool, "occlusion_level": "none|low|medium|high"}
 - clothing: {"upper_garment": string|null, "lower_garment": string|null, "outerwear": string|null, "footwear": string|null, "accessories": string[]}
-- appearance: {"hair": string|null, "pose": "standing|sitting|walking|bending|unknown", "orientation": "front-facing|back-facing|side-facing|unknown"}
+- appearance: {"hair": string|null, "activity": string|null, "orientation": "front-facing|back-facing|side-facing|unknown"}
 """

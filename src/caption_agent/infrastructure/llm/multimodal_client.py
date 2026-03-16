@@ -117,14 +117,7 @@ class LangChainMultimodalClient:
                 "neighbors": neighbors,
             }
         )
-        try:
-            return [RelationPayload.model_validate(item).model_dump() for item in payloads]
-        except ValidationError:
-            logger.exception(
-                "Person relations payload validation failed; using empty fallback. payload=%s",
-                payloads,
-            )
-            return []
+        return self._validate_relation_payloads(payloads, relation_scope="person")
 
     def extract_object_relations(
         self,
@@ -134,14 +127,7 @@ class LangChainMultimodalClient:
         payloads = self.object_relation_runnable.invoke(
             {"image_context": image_context, "target": target}
         )
-        try:
-            return [RelationPayload.model_validate(item).model_dump() for item in payloads]
-        except ValidationError:
-            logger.exception(
-                "Object relations payload validation failed; using empty fallback. payload=%s",
-                payloads,
-            )
-            return []
+        return self._validate_relation_payloads(payloads, relation_scope="object")
 
     def compose_summary(
         self,
@@ -187,7 +173,7 @@ class LangChainMultimodalClient:
             },
             "appearance": {
                 "hair": None,
-                "pose": "standing" if full_body else "unknown",
+                "activity": None,
                 "orientation": "unknown",
             },
         }
@@ -354,15 +340,17 @@ class LangChainMultimodalClient:
             output.setdefault("footwear", None)
             accessories = output.get("accessories", [])
             output["accessories"] = accessories if isinstance(accessories, list) else []
+            output = LangChainMultimodalClient._refine_clothing_components(output)
             return output
         if isinstance(value, str):
-            return {
+            output = {
                 "upper_garment": value.strip() or "unknown",
                 "lower_garment": None,
                 "outerwear": None,
                 "footwear": None,
                 "accessories": [],
             }
+            return LangChainMultimodalClient._refine_clothing_components(output)
         return {
             "upper_garment": "unknown",
             "lower_garment": "unknown",
@@ -376,12 +364,34 @@ class LangChainMultimodalClient:
         if isinstance(value, dict):
             output = dict(value)
             output.setdefault("hair", None)
-            output.setdefault("pose", "unknown")
-            output.setdefault("orientation", "unknown")
-            return output
+            output.setdefault("activity", None)
+            output["orientation"] = LangChainMultimodalClient._normalize_orientation(
+                output.get("orientation", "unknown")
+            )
+            hair_text = output.get("hair")
+            if isinstance(hair_text, str):
+                cleaned_hair, activity_text = LangChainMultimodalClient._split_hair_and_activity(
+                    hair_text
+                )
+                output["hair"] = cleaned_hair
+                if activity_text and not output.get("activity"):
+                    output["activity"] = activity_text
+            return LangChainMultimodalClient._harmonize_appearance_consistency(output)
         if isinstance(value, str):
-            return {"hair": value.strip() or None, "pose": "unknown", "orientation": "unknown"}
-        return {"hair": None, "pose": "unknown", "orientation": "unknown"}
+            cleaned_hair, activity_text = LangChainMultimodalClient._split_hair_and_activity(
+                value
+            )
+            output = {
+                "hair": cleaned_hair,
+                "activity": activity_text,
+                "orientation": "unknown",
+            }
+            return LangChainMultimodalClient._harmonize_appearance_consistency(output)
+        return {
+            "hair": None,
+            "activity": None,
+            "orientation": "unknown",
+        }
 
     @staticmethod
     def _clamp_confidence(value: Any) -> float:
@@ -390,3 +400,152 @@ class LangChainMultimodalClient:
         except Exception:  # noqa: BLE001
             return 0.5
         return max(0.0, min(1.0, num))
+
+    @staticmethod
+    def _validate_relation_payloads(
+        payloads: Any,
+        relation_scope: str,
+    ) -> list[dict[str, Any]]:
+        if not isinstance(payloads, list):
+            logger.error(
+                "%s relations payload is not a list; fallback to empty. payload=%s",
+                relation_scope,
+                payloads,
+            )
+            return []
+
+        validated: list[dict[str, Any]] = []
+        for item in payloads:
+            try:
+                validated.append(RelationPayload.model_validate(item).model_dump())
+                continue
+            except ValidationError:
+                repaired = LangChainMultimodalClient._repair_relation_payload(item)
+                try:
+                    validated.append(RelationPayload.model_validate(repaired).model_dump())
+                except ValidationError:
+                    logger.exception(
+                        "%s relation payload validation failed; drop item. payload=%s repaired=%s",
+                        relation_scope,
+                        item,
+                        repaired,
+                    )
+        return validated
+
+    @staticmethod
+    def _repair_relation_payload(payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            return {}
+        repaired = dict(payload)
+        if "target_person_id" in repaired and repaired["target_person_id"] is not None:
+            repaired["target_person_id"] = str(repaired["target_person_id"])
+        if "confidence" in repaired:
+            repaired["confidence"] = LangChainMultimodalClient._clamp_confidence(
+                repaired.get("confidence", 0.0)
+            )
+        return repaired
+
+    @staticmethod
+    def _refine_clothing_components(clothing: dict[str, Any]) -> dict[str, Any]:
+        upper = (clothing.get("upper_garment") or "").strip()
+        lower = clothing.get("lower_garment")
+        footwear = clothing.get("footwear")
+        accessories = list(clothing.get("accessories") or [])
+
+        if "," in upper:
+            parts = [part.strip() for part in upper.split(",") if part.strip()]
+            upper_parts: list[str] = []
+            for part in parts:
+                token = part.lower()
+                if any(word in token for word in ("pants", "trouser", "jeans", "shorts", "skirt")):
+                    if not lower:
+                        lower = part
+                elif any(word in token for word in ("shoe", "boot", "sneaker", "heel", "sandal")):
+                    if not footwear:
+                        footwear = part
+                elif any(word in token for word in ("helmet", "hat", "cap", "glove", "belt")):
+                    if part not in accessories:
+                        accessories.append(part)
+                else:
+                    upper_parts.append(part)
+            if upper_parts:
+                upper = ", ".join(upper_parts)
+
+        clothing["upper_garment"] = upper or clothing.get("upper_garment")
+        clothing["lower_garment"] = lower
+        clothing["footwear"] = footwear
+        clothing["accessories"] = accessories
+        return clothing
+
+    @staticmethod
+    def _split_hair_and_activity(text: str) -> tuple[str | None, str | None]:
+        normalized = text.strip()
+        if not normalized:
+            return None, None
+
+        lowered = normalized.lower()
+        activity_keywords = (
+            "riding",
+            "wearing",
+            "holding",
+            "standing",
+            "sitting",
+            "walking",
+            "running",
+            "person ",
+            "horse",
+            "bike",
+            "motorcycle",
+        )
+        hair_keywords = (
+            "hair",
+            "long",
+            "short",
+            "curly",
+            "straight",
+            "braid",
+            "ponytail",
+            "bald",
+            "fringe",
+            "bangs",
+        )
+
+        has_activity = any(keyword in lowered for keyword in activity_keywords)
+        has_hair = any(keyword in lowered for keyword in hair_keywords)
+
+        if has_activity and not has_hair:
+            return None, normalized
+        return normalized, None
+
+    @staticmethod
+    def _normalize_orientation(value: Any) -> str:
+        if not isinstance(value, str):
+            return "unknown"
+        normalized = value.strip().lower().replace("_", "-").replace(" ", "-")
+        mapping = {
+            "front": "front-facing",
+            "front-facing": "front-facing",
+            "facing-forward": "front-facing",
+            "forward-facing": "front-facing",
+            "facingforward": "front-facing",
+            "back": "back-facing",
+            "back-facing": "back-facing",
+            "rear-facing": "back-facing",
+            "side": "side-facing",
+            "side-facing": "side-facing",
+            "profile": "side-facing",
+        }
+        return mapping.get(normalized, "unknown")
+
+    @staticmethod
+    def _harmonize_appearance_consistency(appearance: dict[str, Any]) -> dict[str, Any]:
+        activity = str(appearance.get("activity") or "").lower()
+        orientation = appearance.get("orientation", "unknown")
+
+        if orientation == "unknown":
+            if "facing" in activity and "front" in activity:
+                appearance["orientation"] = "front-facing"
+            elif "facing" in activity and "back" in activity:
+                appearance["orientation"] = "back-facing"
+
+        return appearance
