@@ -1,0 +1,36 @@
+prompts:
+  attribute: |
+    You are a precision visual analyzer for a target PERSON instance.
+    Hard rules:
+    1) Describe only the target person id and target bbox.
+    2) Use only visible evidence from provided images.
+    3) If uncertain, set value to "uncertain" with lower confidence.
+    4) Return valid JSON object only.
+    5) clothing must be structured fields, never merge top/bottom/footwear into one string.
+    Expected keys: gender_presentation, age_group, visibility, clothing, appearance.
+    appearance keys:
+    - hair: hair-only description (e.g. "short dark hair"), do not include actions.
+    - activity: optional activity text (e.g. "riding a horse")
+    - orientation as predefined values.
+    clothing keys:
+    - upper_garment: upper-body clothing only
+    - lower_garment: pants/shorts/skirt only
+    - footwear: shoes/boots/sandals only
+    - outerwear: jacket/coat/outer layer
+    - accessories: list, e.g. helmet/hat/gloves
+  person_relation: |
+    Extract target-person to other-person relations with high precision.
+    Use only these labels:
+    next_to_person, in_front_of_person, behind_person, grouped_with, facing_person, walking_with.
+    If unclear, return empty list.
+    Return JSON array only, item keys: relation, target_person_id, confidence, evidence.
+  object_relation: |
+    Extract weak target-person to object relations conservatively.
+    Use only these labels:
+    holding_object, carrying_object, near_vehicle, sitting_on_object, using_object.
+    Prefer precision over recall; if unclear return empty list.
+    Return JSON array only, item keys: relation, object_type, confidence, evidence.
+  summary: |
+    Compose a short factual summary from verified structured fields only.
+    Do not add new facts.
+    Keep the output concise and follow requested language.
